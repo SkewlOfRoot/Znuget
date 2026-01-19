@@ -22,7 +22,7 @@ pub fn main() !void {
     } else if (std.mem.eql(u8, cmd, "help")) {
         try cmdHelp();
     } else {
-        stdout_print("Unknown command: {s}\n\n", .{cmd});
+        stdoutPrintWithColor("Unknown command: {s}\n\n", .{cmd}, Color.red);
         try printHelp();
         return;
     }
@@ -48,7 +48,7 @@ fn cmdUpgrade(allocator: std.mem.Allocator, args: *std.process.ArgIterator) !voi
     }
 
     if (filename == null) {
-        stdout_print("upgrade: missing filename\n", .{});
+        stdoutPrintWithColor("upgrade: missing filename\n", .{}, Color.red);
         return;
     }
 
@@ -65,17 +65,17 @@ fn cmdUpgrade(allocator: std.mem.Allocator, args: *std.process.ArgIterator) !voi
     }
 
     for (project_paths.items) |path| {
-        stdout_print("- Checking for outdated packages in project: {s}\n", .{path});
+        stdoutPrint("- Checking for outdated packages in project: {s}\n", .{path});
         var project_packages = try checkForOutdatedPackages(allocator, path);
         try packages.appendSlice(allocator, project_packages.items);
 
         if (project_packages.items.len == 0) {
-            stdout_print("  Project is up-to-date.\n\n", .{});
+            stdoutPrintWithColor("  Project is up-to-date.\n\n", .{}, Color.green);
         } else {
             for (project_packages.items) |package| {
-                stdout_print("  Found outdated package: '{s}' - '{s}'\n", .{ package.package_name, package.version.requested });
+                stdoutPrintWithColor("  Found outdated package: '{s}' - '{s}'\n", .{ package.package_name, package.version.requested }, Color.yellow);
             }
-            stdout_print("\n", .{});
+            stdoutPrint("\n", .{});
         }
 
         project_packages.clearAndFree(allocator);
@@ -221,7 +221,7 @@ fn parseOutdatedPackagesRawOutput(allocator: std.mem.Allocator, content: []const
 /// Print the help instructions to stdout.
 ///
 fn printHelp() !void {
-    stdout_print(
+    stdoutPrint(
         \\Usage:
         \\  Znuget <command> [options]
         \\
@@ -235,19 +235,48 @@ fn printHelp() !void {
 ///
 /// Prints to stdout.
 ///
-fn stdout_print(comptime text: []const u8, args: anytype) void {
+fn stdoutPrint(comptime fmt: []const u8, args: anytype) void {
+    stdoutPrintWithColor(fmt, args, Color.default);
+}
+
+///
+/// Prints to stdout in a specified color.
+///
+fn stdoutPrintWithColor(comptime fmt: []const u8, args: anytype, color: Color) void {
     var buf: [1024]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&buf);
 
     const stdout = &stdout_writer.interface;
 
-    stdout.print(text, args) catch |err| {
-        stderr_print("Failed to print to stdout: {}\n", .{err});
+    const color_code = switch (color) {
+        Color.black => "30",
+        Color.red => "31",
+        Color.green => "32",
+        Color.yellow => "33",
+        Color.blue => "34",
+        Color.margenta => "35",
+        Color.cyan => "36",
+        Color.white => "37",
+        Color.default => "37",
+    };
+
+    // Set color
+    stdout.print("\x1b[{s}m", .{color_code}) catch {
+        return;
+    };
+
+    // Print text
+    stdout.print(fmt, args) catch |err| {
+        stderrPrint("Failed to print to stdout: {}\n", .{err});
+        return;
+    };
+    // Reset color
+    stdout.print("\x1b[0m", .{}) catch {
         return;
     };
 
     stdout.flush() catch |err| {
-        stderr_print("Failed to flush stdout writer: {}", .{err});
+        stderrPrint("Failed to flush stdout writer: {}", .{err});
         return;
     };
 }
@@ -255,13 +284,13 @@ fn stdout_print(comptime text: []const u8, args: anytype) void {
 ///
 /// Prints to stderr.
 ///
-fn stderr_print(comptime text: []const u8, args: anytype) void {
+fn stderrPrint(comptime fmt: []const u8, args: anytype) void {
     var buf: [1024]u8 = undefined;
     var stderr_writer = std.fs.File.stderr().writer(&buf);
 
     const stderr = &stderr_writer.interface;
 
-    stderr.print(text, args) catch |err| {
+    stderr.print(fmt, args) catch |err| {
         std.debug.print("Failed to print to stderr: {}\n", .{err});
         return;
     };
@@ -297,3 +326,5 @@ const PackageVersion = struct {
         allocator.free(self.latest);
     }
 };
+
+const Color = enum { black, red, green, yellow, blue, margenta, cyan, white, default };
