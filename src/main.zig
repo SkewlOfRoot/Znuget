@@ -22,7 +22,7 @@ pub fn main() !void {
     } else if (std.mem.eql(u8, cmd, "help")) {
         try cmdHelp();
     } else {
-        std.debug.print("Unknown command: {s}\n\n", .{cmd});
+        stdout_print("Unknown command: {s}\n\n", .{cmd});
         try printHelp();
         return;
     }
@@ -48,7 +48,7 @@ fn cmdUpgrade(allocator: std.mem.Allocator, args: *std.process.ArgIterator) !voi
     }
 
     if (filename == null) {
-        std.debug.print("upgrade: missing filename\n", .{});
+        stdout_print("upgrade: missing filename\n", .{});
         return;
     }
 
@@ -65,18 +65,20 @@ fn cmdUpgrade(allocator: std.mem.Allocator, args: *std.process.ArgIterator) !voi
     }
 
     for (project_paths.items) |path| {
-        // var project_packages = try extractNugetPackagesFromProjectFile(allocator, path);
-        // try packages.appendSlice(allocator, project_packages.items);
-        // project_packages.clearAndFree(allocator);
-
-        std.debug.print("Checking for outdated packages in project: {s}\n", .{path});
+        stdout_print("- Checking for outdated packages in project: {s}\n", .{path});
         var project_packages = try checkForOutdatedPackages(allocator, path);
         try packages.appendSlice(allocator, project_packages.items);
-        project_packages.clearAndFree(allocator);
-    }
 
-    for (packages.items) |package| {
-        std.debug.print("{s}: '{s}' - '{s}'\n", .{ package.project_name, package.package_name, package.version.requested });
+        if (project_packages.items.len == 0) {
+            stdout_print("  Project is up-to-date.\n\n", .{});
+        } else {
+            for (project_packages.items) |package| {
+                stdout_print("  Found outdated package: '{s}' - '{s}'\n", .{ package.package_name, package.version.requested });
+            }
+            stdout_print("\n", .{});
+        }
+
+        project_packages.clearAndFree(allocator);
     }
 }
 
@@ -114,40 +116,6 @@ fn getProjectFilePaths(solution_path: []const u8, allocator: std.mem.Allocator) 
 
     return project_paths;
 }
-
-///
-/// Extract any Nuget package references from the .NET project file.
-///
-// fn extractNugetPackagesFromProjectFile(allocator: std.mem.Allocator, project_file_path: []const u8) !std.ArrayList(Package) {
-//     const content = try readFileContent(allocator, project_file_path);
-//     defer allocator.free(content);
-
-//     var content_iter = std.mem.splitScalar(u8, content, '\n');
-
-//     var list = std.ArrayList(Package){};
-
-//     while (content_iter.next()) |line| {
-//         if (std.mem.indexOf(u8, line, "PackageReference") != null) {
-//             var line_iter = std.mem.splitSequence(u8, line, "Version");
-
-//             const s1 = line_iter.next();
-//             const s2 = line_iter.next();
-//             if (s1 == null or s1.?.len == line.len) {
-//                 continue; // "Version" not found.
-//             }
-
-//             const project_name = try allocator.dupe(u8, std.fs.path.stem(project_file_path));
-//             const project_path = try allocator.dupe(u8, project_file_path);
-//             const package_name = try allocator.dupe(u8, extractBetweenQuotes(s1.?).?);
-//             const version = try allocator.dupe(u8, extractBetweenQuotes(s2.?).?);
-//             const package = Package{ .project_name = project_name, .project_path = project_path, .package_name = package_name, .version = version };
-
-//             try list.append(allocator, package);
-//         }
-//     }
-
-//     return list;
-// }
 
 ///
 /// Read the contents from a file.
@@ -209,58 +177,51 @@ fn checkForOutdatedPackages(allocator: std.mem.Allocator, project_path: []const 
 fn parseOutdatedPackagesRawOutput(allocator: std.mem.Allocator, content: []const u8, project_path: []const u8) !std.ArrayList(Package) {
     var lines_iter = std.mem.splitScalar(u8, content, '\n');
 
-    var list = std.ArrayList(Package){};
+    var packages = std.ArrayList(Package){};
 
     while (lines_iter.next()) |line| {
         if (std.mem.startsWith(u8, line, "   >")) {
             var line_iter = std.mem.splitScalar(u8, line, '\n');
 
             while (line_iter.next()) |val| {
-                std.debug.print("val: {s}\n", .{val});
                 var val_iter = std.mem.splitSequence(u8, val, " ");
 
-                var arr = std.ArrayList([]const u8){};
-                defer arr.deinit(allocator);
+                var value_list = std.ArrayList([]const u8){};
+                defer value_list.deinit(allocator);
 
                 while (val_iter.next()) |v| {
                     if (std.mem.eql(u8, v, "") or std.mem.eql(u8, v, ">")) {
                         continue;
                     }
 
-                    try arr.append(allocator, v);
-                    std.debug.print("v: {s}\n", .{v});
+                    try value_list.append(allocator, v);
                 }
 
-                if (arr.items.len > 0) {
+                if (value_list.items.len > 0) {
                     const package = Package{
                         .project_path = try allocator.dupe(u8, project_path),
                         .project_name = try allocator.dupe(u8, std.fs.path.stem(project_path)),
-                        .package_name = try allocator.dupe(u8, arr.items[0]),
+                        .package_name = try allocator.dupe(u8, value_list.items[0]),
                         .version = PackageVersion{
-                            .requested = try allocator.dupe(u8, arr.items[1]),
-                            .resolved = try allocator.dupe(u8, arr.items[2]),
-                            .latest = try allocator.dupe(u8, arr.items[3]),
+                            .requested = try allocator.dupe(u8, value_list.items[1]),
+                            .resolved = try allocator.dupe(u8, value_list.items[2]),
+                            .latest = try allocator.dupe(u8, value_list.items[3]),
                         },
                     };
-                    try list.append(allocator, package);
+                    try packages.append(allocator, package);
                 }
             }
         }
     }
 
-    return list;
+    return packages;
 }
 
 ///
 /// Print the help instructions to stdout.
 ///
 fn printHelp() !void {
-    var buf: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&buf);
-
-    const stdout = &stdout_writer.interface;
-
-    try stdout.print(
+    stdout_print(
         \\Usage:
         \\  Znuget <command> [options]
         \\
@@ -269,8 +230,40 @@ fn printHelp() !void {
         \\  help
         \\
     , .{});
+}
 
-    try stdout.flush();
+fn stdout_print(comptime text: []const u8, args: anytype) void {
+    var buf: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&buf);
+
+    const stdout = &stdout_writer.interface;
+
+    stdout.print(text, args) catch |err| {
+        stderr_print("Failed to print to stdout: {}\n", .{err});
+        return;
+    };
+
+    stdout.flush() catch |err| {
+        stderr_print("Failed to flush stdout writer: {}", .{err});
+        return;
+    };
+}
+
+fn stderr_print(comptime text: []const u8, args: anytype) void {
+    var buf: [1024]u8 = undefined;
+    var stderr_writer = std.fs.File.stderr().writer(&buf);
+
+    const stderr = &stderr_writer.interface;
+
+    stderr.print(text, args) catch |err| {
+        std.debug.print("Failed to print to stderr: {}\n", .{err});
+        return;
+    };
+
+    stderr.flush() catch |err| {
+        std.debug.print("Failed to flush stderr writer: {}", .{err});
+        return;
+    };
 }
 
 const Package = struct {
