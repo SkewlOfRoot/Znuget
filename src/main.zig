@@ -232,6 +232,9 @@ fn printHelp() !void {
     , .{});
 }
 
+///
+/// Prints to stdout.
+///
 fn stdout_print(comptime text: []const u8, args: anytype) void {
     var buf: [1024]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&buf);
@@ -249,6 +252,9 @@ fn stdout_print(comptime text: []const u8, args: anytype) void {
     };
 }
 
+///
+/// Prints to stderr.
+///
 fn stderr_print(comptime text: []const u8, args: anytype) void {
     var buf: [1024]u8 = undefined;
     var stderr_writer = std.fs.File.stderr().writer(&buf);
