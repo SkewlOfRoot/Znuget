@@ -22,7 +22,7 @@ pub fn main() !void {
     } else if (std.mem.eql(u8, cmd, "help")) {
         try cmdHelp();
     } else {
-        stdoutPrintWithColor("Unknown command: {s}\n\n", .{cmd}, Color.red);
+        stdoutPrintInColor("Unknown command: {s}\n\n", .{cmd}, Color.red);
         try printHelp();
         return;
     }
@@ -48,7 +48,7 @@ fn cmdUpgrade(allocator: std.mem.Allocator, args: *std.process.ArgIterator) !voi
     }
 
     if (filename == null) {
-        stdoutPrintWithColor("upgrade: missing filename\n", .{}, Color.red);
+        stdoutPrintInColor("upgrade: missing filename\n", .{}, Color.red);
         return;
     }
 
@@ -70,10 +70,10 @@ fn cmdUpgrade(allocator: std.mem.Allocator, args: *std.process.ArgIterator) !voi
         try packages.appendSlice(allocator, project_packages.items);
 
         if (project_packages.items.len == 0) {
-            stdoutPrintWithColor("  Project is up-to-date.\n\n", .{}, Color.green);
+            stdoutPrintInColor("  Project is up-to-date.\n\n", .{}, Color.green);
         } else {
             for (project_packages.items) |package| {
-                stdoutPrintWithColor("  Found outdated package: '{s}' - '{s}'\n", .{ package.package_name, package.version.requested }, Color.yellow);
+                stdoutPrintInColor("  Found outdated package: '{s}' - '{s}'\n", .{ package.package_name, package.version.requested }, Color.yellow);
             }
             stdoutPrint("\n", .{});
         }
@@ -236,13 +236,13 @@ fn printHelp() !void {
 /// Prints to stdout.
 ///
 fn stdoutPrint(comptime fmt: []const u8, args: anytype) void {
-    stdoutPrintWithColor(fmt, args, Color.default);
+    stdoutPrintInColor(fmt, args, Color.default);
 }
 
 ///
 /// Prints to stdout in a specified color.
 ///
-fn stdoutPrintWithColor(comptime fmt: []const u8, args: anytype, color: Color) void {
+fn stdoutPrintInColor(comptime fmt: []const u8, args: anytype, color: Color) void {
     var buf: [1024]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&buf);
 
