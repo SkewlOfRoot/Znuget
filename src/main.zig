@@ -248,17 +248,7 @@ fn stdoutPrintWithColor(comptime fmt: []const u8, args: anytype, color: Color) v
 
     const stdout = &stdout_writer.interface;
 
-    const color_code = switch (color) {
-        Color.black => "30",
-        Color.red => "31",
-        Color.green => "32",
-        Color.yellow => "33",
-        Color.blue => "34",
-        Color.margenta => "35",
-        Color.cyan => "36",
-        Color.white => "37",
-        Color.default => "37",
-    };
+    const color_code = colorCode(color);
 
     // Set color
     stdout.print("\x1b[{s}m", .{color_code}) catch {
@@ -328,3 +318,20 @@ const PackageVersion = struct {
 };
 
 const Color = enum { black, red, green, yellow, blue, margenta, cyan, white, default };
+
+///
+/// Converts a color to the corresponding xterm color code.
+///
+fn colorCode(color: Color) []const u8 {
+    return switch (color) {
+        Color.black => "30",
+        Color.red => "31",
+        Color.green => "32",
+        Color.yellow => "33",
+        Color.blue => "34",
+        Color.margenta => "35",
+        Color.cyan => "36",
+        Color.white => "37",
+        Color.default => "37",
+    };
+}
