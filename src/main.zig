@@ -138,9 +138,7 @@ fn readFileContent(allocator: std.mem.Allocator, file_path: []const u8) ![]const
 fn extractBetweenQuotes(s: []const u8) ?[]const u8 {
     const s_index = std.mem.indexOfScalar(u8, s, '"') orelse return null;
     const rest = s[s_index + 1 ..];
-
     const e_index = std.mem.indexOfScalar(u8, rest, '"') orelse return null;
-
     return rest[0..e_index];
 }
 
@@ -156,7 +154,6 @@ fn checkForOutdatedPackages(allocator: std.mem.Allocator, project_path: []const 
     }, allocator);
 
     child.cwd = std.fs.path.dirname(project_path);
-
     child.stdin_behavior = .Ignore;
     child.stdout_behavior = .Pipe;
     child.stderr_behavior = .Pipe;
@@ -171,7 +168,7 @@ fn checkForOutdatedPackages(allocator: std.mem.Allocator, project_path: []const 
     const term = try child.wait();
 
     if (term.Exited != 0) {
-        std.debug.print("dotnet failed:\n{s}\n", .{stderr});
+        stdoutPrintInColor("dotnet failed:\n{s}\n", .{stderr}, Color.red);
         return error.DotnetFailed;
     }
 
