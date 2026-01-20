@@ -34,12 +34,12 @@ pub fn main() !void {
 fn cmdUpgrade(allocator: std.mem.Allocator, args: *std.process.ArgIterator) !void {
     var filename: ?[]const u8 = null;
 
-    var dry = false;
+    var dry_run = false;
     var force = false;
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--dry-run")) {
-            dry = true;
+            dry_run = true;
         } else if (std.mem.eql(u8, arg, "--force")) {
             force = true;
         } else if (filename == null) {
@@ -74,12 +74,20 @@ fn cmdUpgrade(allocator: std.mem.Allocator, args: *std.process.ArgIterator) !voi
         } else {
             for (project_packages.items) |package| {
                 stdoutPrintInColor("  Found outdated package: '{s}' - '{s}'\n", .{ package.package_name, package.version.requested }, Color.yellow);
+
+                if (dry_run) {
+                    upgradeToLatestPackageDry(package);
+                } else {
+                    try upgradeToLatestPackage(allocator, package);
+                }
             }
             stdoutPrint("\n", .{});
         }
 
         project_packages.clearAndFree(allocator);
     }
+
+    stdoutPrintInColor("DONE :)\n", .{}, Color.green);
 }
 
 ///
@@ -167,15 +175,15 @@ fn checkForOutdatedPackages(allocator: std.mem.Allocator, project_path: []const 
         return error.DotnetFailed;
     }
 
-    const packages = try parseOutdatedPackagesRawOutput(allocator, stdout, project_path);
+    const packages = try processOutdatedPackagesRawOutput(allocator, stdout, project_path);
     return packages;
 }
 
 ///
-/// Parses the raw string output from the dotnet list command and returns an ArrayList of outdated packages.
+/// Processes the raw string output from the dotnet list command and returns an ArrayList of outdated packages.
 ///
-fn parseOutdatedPackagesRawOutput(allocator: std.mem.Allocator, content: []const u8, project_path: []const u8) !std.ArrayList(Package) {
-    var lines_iter = std.mem.splitScalar(u8, content, '\n');
+fn processOutdatedPackagesRawOutput(allocator: std.mem.Allocator, raw: []const u8, project_path: []const u8) !std.ArrayList(Package) {
+    var lines_iter = std.mem.splitScalar(u8, raw, '\n');
 
     var packages = std.ArrayList(Package){};
 
@@ -215,6 +223,58 @@ fn parseOutdatedPackagesRawOutput(allocator: std.mem.Allocator, content: []const
     }
 
     return packages;
+}
+
+///
+/// Dry-run of upgrading a .NET package to the latest version.
+///
+fn upgradeToLatestPackageDry(package: Package) void {
+    stdoutPrint("  Would upgrade {s} package version from {s} to {s} \n", .{ package.package_name, package.version.requested, package.version.latest });
+}
+
+///
+/// Upgrade .NET Nuget package to the latest version using the dotnet CLI.
+///
+fn upgradeToLatestPackage(allocator: std.mem.Allocator, package: Package) !void {
+    var child = std.process.Child.init(&[_][]const u8{ "dotnet", "add", "package", package.package_name }, allocator);
+
+    child.cwd = std.fs.path.dirname(package.project_path);
+    child.stdin_behavior = .Ignore;
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
+
+    try child.spawn();
+
+    const stdout = try child.stdout.?.readToEndAlloc(allocator, 10 * 1024 * 1024);
+    defer allocator.free(stdout);
+    const stderr = try child.stderr.?.readToEndAlloc(allocator, 10 * 1024 * 1024);
+    defer allocator.free(stderr);
+
+    const term = try child.wait();
+
+    if (term.Exited != 0) {
+        stdoutPrintInColor("dotnet failed: {s}\n", .{stderr}, Color.red);
+        return error.DotnetFailed;
+    }
+
+    processUpgradePackageRawOutput(stdout);
+}
+
+///
+/// Processes the raw string output from the dotnet add package command.
+///
+fn processUpgradePackageRawOutput(raw: []const u8) void {
+    var lines_iter = std.mem.splitScalar(u8, raw, '\n');
+
+    while (lines_iter.next()) |line| {
+        if (std.mem.startsWith(u8, line, "info : Adding") or std.mem.startsWith(u8, line, "info : Installed") or std.mem.startsWith(u8, line, "info : Package ")) {
+            stdoutPrint("  {s}\n", .{line});
+        } else if (std.mem.startsWith(u8, line, "info : PackageReference")) {
+            stdoutPrintInColor("  {s}\n", .{line}, Color.green);
+        } else if (std.mem.startsWith(u8, line, "log  : Restored")) {
+            stdoutPrintInColor("  {s}\n", .{line}, Color.blue);
+        }
+    }
 }
 
 ///
