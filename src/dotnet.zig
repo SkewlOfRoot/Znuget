@@ -59,7 +59,8 @@ pub fn checkForOutdatedPackages(allocator: std.mem.Allocator, project_path: []co
     const term = try child.wait();
 
     if (term.Exited != 0) {
-        utils.stdoutPrintInColor("dotnet failed:\n{s}\n", .{stderr}, Color.red);
+        utils.stdoutPrint("  dotnet exited with code: {}  - stdout: {s}\n", .{ term.Exited, stdout });
+        utils.stdoutPrintInColor("  dotnet exited with code: {}  - stderr: {s}\n", .{ term.Exited, stderr }, Color.red);
         return error.DotnetFailed;
     }
 
@@ -99,7 +100,7 @@ fn processOutdatedPackagesRawOutput(allocator: std.mem.Allocator, raw: []const u
                         .version = PackageVersion{
                             .requested = try allocator.dupe(u8, value_list.items[1]),
                             .resolved = try allocator.dupe(u8, value_list.items[2]),
-                            .latest = try allocator.dupe(u8, value_list.items[3]),
+                            .latest = try std.mem.replaceOwned(u8, allocator, value_list.items[3], "\r", ""),
                         },
                     };
                     try packages.append(allocator, package);
@@ -118,7 +119,7 @@ pub fn upgradeToLatestPackageDry(package: Package) void {
 
 /// Upgrade .NET Nuget package to the latest version using the dotnet CLI.
 pub fn upgradeToLatestPackage(allocator: std.mem.Allocator, package: Package) !void {
-    var child = std.process.Child.init(&[_][]const u8{ "dotnet", "add", "package", package.package_name }, allocator);
+    var child = std.process.Child.init(&[_][]const u8{ "dotnet", "add", "package", package.package_name, "--version", package.version.latest }, allocator);
 
     child.cwd = std.fs.path.dirname(package.project_path);
     child.stdin_behavior = .Ignore;
@@ -135,7 +136,8 @@ pub fn upgradeToLatestPackage(allocator: std.mem.Allocator, package: Package) !v
     const term = try child.wait();
 
     if (term.Exited != 0) {
-        utils.stdoutPrintInColor("dotnet failed: {s}\n", .{stderr}, Color.red);
+        utils.stdoutPrint("  dotnet exited with code: {}  - stdout: {s}\n", .{ term.Exited, stdout });
+        utils.stdoutPrintInColor("  dotnet exited with code: {}  - stderr: {s}\n", .{ term.Exited, stderr }, Color.red);
         return error.DotnetFailed;
     }
 
